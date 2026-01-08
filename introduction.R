@@ -1,0 +1,201 @@
+
+# You should get a warning to install ipumsr. Click "Install". If there is no warning, use this command (remove the #):
+#install.packages('ipumsr')
+
+library(ipumsr)
+ddi <- read_ipums_ddi("User Extract usa_00003.dat.xml")
+data <- read_ipums_micro(ddi)
+
+# Packages
+# ggplot2, ivreg, fixest, texreg, marginaleffects, modelsummary, tibble
+
+library(dplyr)
+library(ggplot2)
+library(ivreg)
+library(fixest)
+library(texreg)
+library(marginaleffects)
+library(modelsummary)
+library(tibble)
+
+# what's that EDUC code?
+
+ipums_val_labels(data$EDUC)
+
+# Exercise 2
+
+model <- lm(INCWAGE ~ EDUC, data)
+summary(model)
+
+model2 <- lm(INCWAGE ~ EDUC + SEX, data)
+summary(model2)
+
+regression_data <- filter(data, EMPSTAT == 1)
+
+model3 <- lm(INCWAGE ~ EDUC, regression_data)
+summary(model3)
+
+# Exercise 3
+
+write.csv(data, "data.csv", row.names = FALSE)
+
+rm(data)
+data <- read.csv("data.csv")
+
+data3 <- data[, c("CBSERIAL", "PERNUM", "INCWAGE", "SEX", "AGE")]
+data4 <- data[, c("CBSERIAL", "PERNUM", "INCWAGE", "EDUC", "DEGFIELDD", "EMPSTAT", "UHRSWORK")]
+data5 <- filter(data, INCWAGE > 50000)
+data6 <- filter(data, INCWAGE <= 50000)
+
+data3_and_4 <- left_join(data3, data4, by = c("CBSERIAL", "PERNUM"))
+
+data5_and_6 <- rbind(data5, data6)
+
+data5_and_6 <- mutate(data5_and_6, hourly_wage = INCWAGE/(UHRSWORK*52))
+
+data5_and_6 <- mutate(
+  data5_and_6,
+  hourly_wage = replace(hourly_wage, !is.finite(hourly_wage), 0)
+)
+
+data5_and_6 <- subset(
+  data5_and_6,
+  !hourly_wage %in% c("0")
+)
+
+data5_and_6 <- mutate(data5_and_6, YEAR = "01-JAN-2023")
+
+data5_and_6$YEAR <- as.Date(data5_and_6$YEAR, format = "%d-%b-%Y")
+
+data5_and_6 <- data5_and_6 %>% arrange(hourly_wage)
+
+data5_and_6 <- data5_and_6 %>% arrange(hourly_wage, alphabetical_variable)
+
+data5_and_6 <- filter(mutate(data5_and_6, silly_wage = hourly_wage*100), silly_wage > 100)
+
+table(data$AGE)
+
+prop.table(table(data$SEX))
+
+table(data$SEX) %>% prop.table()*100
+
+# Exercise 4: Graphs
+
+sample <- sample_n(data, 1000)
+
+ggplot(sample, aes(x = AGE, y = INCWAGE)) +
+  geom_point()
+
+your_plot_name_here <- ggplot(sample %>% filter(INCWAGE < 990000), aes(x = AGE, y = INCWAGE)) +
+  geom_point()
+
+ggsave("your_file_name_here.png", plot = your_plot_name_here, dpi = 500, width = 5, height = 5)
+
+ggplot(sample, aes(x = EDUC, y = INCWAGE)) +
+  geom_point() +
+  labs(
+    x = "Highest level of education",
+    y = "Income"
+  )
+
+ggplot(sample, aes(x = AGE)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "black") +
+  theme_minimal()
+
+# Exercise 5: More Regressions
+
+iv_regression <- ivreg(UHRSWORK ~ INCWAGE + AGE + EDUC | POVERTY + AGE + EDUC, data = data)
+summary(iv_regression)
+
+data <- data %>%
+  mutate(overworked = as.integer(UHRSWORK > 40))
+
+# Probit
+
+# Create degreefield variable
+
+deg_labels <- ddi$var_info$val_labels[[15]]
+
+data$degreefield <- deg_labels$lbl[match(data$DEGFIELD, deg_labels$val)]
+
+# Take a sample to avoid long runtime
+
+probit_sample <- sample_n(data, 10000)
+
+probit <- glm(overworked ~ degreefield + AGE + SEX, family = binomial(link = "probit"), probit_sample)
+
+ame <- avg_slopes(probit)
+
+# Exercise 6: Saving Regressions
+
+modelsummary(model, output = "insert_name_here.docx", stars = TRUE)
+
+# big table
+
+modelsummary(
+  list(
+    "Model 1" = model,
+    "Model 2" = model2,
+    "Model 3" = model3
+  ),
+  
+  # Drop coefficients for variables of your choice
+  coef_omit = "SEX",
+  
+  stars = TRUE,
+  
+  # Include only goodness-of-fit statistics of your choice (here just R2 and n)
+  gof_map = c("r.squared", "nobs"),
+  
+  # Add custom footer rows. Here, the model is INCWAGE = b*EDUC + ... + ε
+  add_rows = tibble::tibble(
+    term = c(
+      "Mean of INCWAGE",
+      "SEX included?"
+    ),
+    `Model 1` = c(
+      round(mean(model$model$INCWAGE, na.rm = TRUE), 2),
+      "No"
+    ),
+    `Model 2` = c(
+      round(mean(model2$model$INCWAGE, na.rm = TRUE), 2),
+      "Yes"
+    ),
+    `Model 3` = c(
+      round(mean(model3$model$INCWAGE, na.rm = TRUE), 2),
+      "No"
+    )
+  ),
+  output = "reg_table_name.docx"
+)
+
+# html
+
+htmlreg(
+  list(model),
+  file = "model.html",
+  stars = c(0.01, 0.05, 0.1)
+)
+
+# Wald
+
+library(car)
+linearHypothesis(model2, c("EDUC = 0", "SEX = 0"))
+
+# Renaming:
+probit_sample <- dplyr::rename(probit_sample, funny_name = YEAR)
+
+# Adding column names (or replacing them):
+colnames(data3) <- c("first column name", "second column name", "third column name", "fourth column name", "fifth column name")
+
+data3 <- distinct(data3)
+
+# Here's an example from the ACS data: average hours worked by class of worker
+# First create a readable worker class variable (just reuse this code):
+class_labels <- ddi$var_info$val_labels[[19]]
+
+probit_sample$worker_type <- class_labels$lbl[match(probit_sample$CLASSWKR, class_labels$val)]
+
+# Now run these commands:
+aggregation <- aggregate(UHRSWORK ~ worker_type, data = probit_sample, FUN = mean)
+print(aggregation)
