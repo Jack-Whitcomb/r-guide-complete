@@ -1,3 +1,6 @@
+# Below is the code I wrote while completing the guide to R that I wrote and shared here: https://jackonomics.substack.com/p/a-guide-to-r-for-people-who-want
+# It provides code for opening data, merging data, renaming columns, and other useful transformations.
+# There is also code for making graphs, running regressions, and saving them.
 
 # You should get a warning to install ipumsr. Click "Install". If there is no warning, use this command (remove the #):
 #install.packages('ipumsr')
@@ -198,4 +201,5 @@ probit_sample$worker_type <- class_labels$lbl[match(probit_sample$CLASSWKR, clas
 
 # Now run these commands:
 aggregation <- aggregate(UHRSWORK ~ worker_type, data = probit_sample, FUN = mean)
+
 print(aggregation)
